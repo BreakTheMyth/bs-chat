@@ -1,36 +1,36 @@
 package server
 
 import (
-	"net/http"
-	"fmt"
-	"mygo/config"
-	"mygo/log"
+    "net/http"
+    "fmt"
+    "mygo/config"
+    "mygo/log"
 )
 
 type handler struct {
-	rule     string
-	function http.HandlerFunc
+    rule     string
+    function http.HandlerFunc
 }
 
 var handlerList = make([]handler, 0)
 
 func Start() {
-	mux := http.NewServeMux()
+    mux := http.NewServeMux()
 
-	for _, v := range handlerList {
-		mux.HandleFunc(v.rule, v.function)
-	}
+    for _, v := range handlerList {
+        mux.HandleFunc(v.rule, v.function)
+    }
 
-	log.Start()
+    log.Start()
 
-	log.Info <- fmt.Sprintf("%s:%s",
-		config.SERVER_HOST, config.SERVER_PORT)
+    log.Info <- fmt.Sprintf("%s:%s",
+        config.SERVER_HOST, config.SERVER_PORT)
 
-	log.Err <- http.ListenAndServeTLS(fmt.Sprintf("%s:%s",
-		config.SERVER_HOST, config.SERVER_PORT),
-		config.SERVER_CRT, config.SERVER_KEY, mux)
+    log.Err <- http.ListenAndServeTLS(fmt.Sprintf("%s:%s",
+        config.SERVER_HOST, config.SERVER_PORT),
+        config.SERVER_CRT, config.SERVER_KEY, mux)
 }
 
 func Register(rule string, function http.HandlerFunc) {
-	handlerList = append(handlerList, handler{rule, function})
+    handlerList = append(handlerList, handler{rule, function})
 }
