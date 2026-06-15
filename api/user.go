@@ -9,39 +9,25 @@ type user struct {
     user_id         uint32
     user_name       string
     user_ico        string
+    message         chan string
     session_id_list map[uint32]struct{}
-}
-
-type uint32_min_heap []uint32
-
-func (h uint32_min_heap) Len() int { return len(h) }
-
-func (h uint32_min_heap) Less(a int, b int) bool { return h[a] < h[b] }
-
-func (h uint32_min_heap) Swap(a int, b int) { h[a], h[b] = h[b], h[a] }
-
-func (h *uint32_min_heap) Push(i any) { *h = append(*h, i.(uint32)) }
-
-func (h *uint32_min_heap) Pop() any {
-    new_len := h.Len() - 1
-    last    := (*h)[new_len]
-    *h       = (*h)[:new_len]
-    return last
 }
 
 var user_count = uint32(0)
 var user_list  = make(map[uint32]user)
 var idle_user  = &uint32_min_heap{}
-var mutex sync.Mutex
+
+var user_mutex sync.Mutex
 
 func init() {
     heap.Init(idle_user)
 }
 
-func user_create(user_name string) uint32 {
+func user_create(user_name string, user_ico string, message chan string) uint32 {
     var user_id uint32
 
-    mutex.Lock()
+    user_mutex.Lock()
+    defer user_mutex.Unlock()
 
     user_id = user_count
     if idle_user.Len() != 0 {
@@ -50,12 +36,11 @@ func user_create(user_name string) uint32 {
 
     user_count++
 
-    mutex.Unlock()
-
     user_list[user_id] = user{
         user_id:         user_id, 
         user_name:       user_name, 
         user_ico:        "1", 
+        message:         message,
         session_id_list: map[uint32]struct{}{},
     }
 
@@ -63,13 +48,67 @@ func user_create(user_name string) uint32 {
 }
 
 func user_destroy(user_id uint32) {
-    mutex.Lock()
+    user_mutex.Lock()
+    defer user_mutex.Unlock()
+    session_mutex.Lock()
+    defer session_mutex.Unlock()
 
     user_count--
+
+    u := user_list[user_id]
+
+    for session_id := range u.session_id_list {
+        s := session_list[session_id]
+
+        delete(s.user_id_list, user_id)
+    }
+
+    u.session_id_list = nil
 
     delete(user_list, user_id)
 
     heap.Push(idle_user, user_id)
+}
 
-    mutex.Unlock()
+func user_is_in_session(user_id uint32, session_id uint32) bool {
+    user_mutex.Lock()
+    defer user_mutex.Unlock()
+
+    var is_exist bool
+    var u        user
+
+    u, is_exist = user_list[user_id]
+    if !is_exist {
+        return false
+    }
+
+    _, is_exist = u.session_id_list[session_id]
+
+    return is_exist
+}
+
+func user_join_session(user_id uint32, session_id uint32) {
+    user_mutex.Lock()
+    defer user_mutex.Unlock()
+    session_mutex.Lock()
+    defer session_mutex.Unlock()
+
+    u := user_list[user_id]
+    s := session_list[session_id]
+
+    u.session_id_list[session_id] = struct{}{}
+    s.user_id_list[user_id]       = struct{}{}
+}
+
+func user_exit_session(user_id uint32, session_id uint32) {
+    user_mutex.Lock()
+    defer user_mutex.Unlock()
+    session_mutex.Lock()
+    defer session_mutex.Unlock()
+
+    u := user_list[user_id]
+    s := session_list[session_id]
+
+    delete(u.session_id_list, session_id)
+    delete(s.user_id_list, user_id)
 }
