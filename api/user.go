@@ -23,7 +23,7 @@ func init() {
     heap.Init(idle_user)
 }
 
-func user_create(user_name string, user_ico string, message chan string) uint32 {
+func user_create(user_name string, user_ico string) uint32 {
     var user_id uint32
 
     user_mutex.Lock()
@@ -40,7 +40,7 @@ func user_create(user_name string, user_ico string, message chan string) uint32 
         user_id:         user_id, 
         user_name:       user_name, 
         user_ico:        "1", 
-        message:         message,
+        message:         make(chan string, 0x100),
         session_id_list: map[uint32]struct{}{},
     }
 
