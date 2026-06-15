@@ -2,19 +2,15 @@ package api
 
 import (
     "container/heap"
-    "encoding/json"
-    "net/http"
-    "mygo/server"
+    "sync"
 )
 
-type User struct {
-    UserId        string          `json:"user_id"`
-    UserName      string          `json:"user_name"`
-    UserIco       string          `json:"user_ico"`
-    SessionIdList map[uint32]bool `json:"session_id_list"`
+type user struct {
+    user_id         uint32
+    user_name       string
+    user_ico        string
+    session_id_list map[uint32]struct{}
 }
-
-var user_list = map[string]User{}
 
 type uint32_min_heap []uint32
 
@@ -33,40 +29,47 @@ func (h *uint32_min_heap) Pop() any {
     return last
 }
 
+var user_count = uint32(0)
+var user_list  = make(map[uint32]user)
+var idle_user  = &uint32_min_heap{}
+var mutex sync.Mutex
+
 func init() {
-
-    server.Register("GET /users/{id}", get_user_handler)
-
-    server.Register("POST /users", post_user_handler)
-
-    server.Register("DELETE /users/{id}", delete_user_handler)
-
-    server.Register("PATCH /users/{id}", patch_user_handler)
-
-    idle_user := &uint32_min_heap{}
-
     heap.Init(idle_user)
-
 }
 
-func get_user_handler(w http.ResponseWriter, r *http.Request) {
-    user_id := r.PathValue("id")
+func user_create(user_name string) uint32 {
+    var user_id uint32
 
-    user, is_exist := user_list[user_id]
+    mutex.Lock()
 
-    if !is_exist {
-        w.WriteHeader(404)
-        return
+    user_id = user_count
+    if idle_user.Len() != 0 {
+        user_id = heap.Pop(idle_user).(uint32)
     }
 
-    json.NewEncoder(w).Encode(user)
+    user_count++
+
+    mutex.Unlock()
+
+    user_list[user_id] = user{
+        user_id:         user_id, 
+        user_name:       user_name, 
+        user_ico:        "1", 
+        session_id_list: map[uint32]struct{}{},
+    }
+
+    return user_id
 }
 
-func post_user_handler(w http.ResponseWriter, r *http.Request) {
-}
+func user_destroy(user_id uint32) {
+    mutex.Lock()
 
-func delete_user_handler(w http.ResponseWriter, r *http.Request) {
-}
+    user_count--
 
-func patch_user_handler(w http.ResponseWriter, r *http.Request) {
+    delete(user_list, user_id)
+
+    heap.Push(idle_user, user_id)
+
+    mutex.Unlock()
 }
