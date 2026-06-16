@@ -6,34 +6,39 @@ import (
     "net/http"
     "errors"
     "bufio"
-    "net"
+    "sync"
+    "time"
     "fmt"
+    "io"
     "mygo/config"
     "mygo/log"
 )
 
-func websocket_upgrade(w http.ResponseWriter, r *http.Request) error {
+func websocket_upgrade(w http.ResponseWriter, r *http.Request) (
+    chan []byte, chan []byte, chan struct{}, *sync.Once, error,
+) {
+
     if !r.ProtoAtLeast(1, 1) {
-        return errors.New("need \"HTTP/1.1\"")
+        return nil, nil, nil, nil, errors.New("need \"HTTP/1.1\"")
     }
 
     if r.Host != config.SERVER_HOST {
-        return errors.New("invalid \"Host\"")
+        return nil, nil, nil, nil, errors.New("invalid \"Host\"")
     }
 
     if r.Header.Get("Sec-WebSocket-Version") != "13" {
 
         w.WriteHeader(426)
 
-        return errors.New("invalid \"Set-WebSocket-Version\"")
+        return nil, nil, nil, nil, errors.New("invalid \"Set-WebSocket-Version\"")
     }
 
     if r.Header.Get("Connection") != "Upgrade" {
-        return errors.New("invalid \"Connection\"")
+        return nil, nil, nil, nil, errors.New("invalid \"Connection\"")
     }
 
     if r.Header.Get("Upgrade") != "websocket" {
-        return errors.New("invalid \"Upgrade\"")
+        return nil, nil, nil, nil, errors.New("invalid \"Upgrade\"")
     }
 
     key := r.Header.Get("Sec-WebSocket-Key")
@@ -41,7 +46,7 @@ func websocket_upgrade(w http.ResponseWriter, r *http.Request) error {
     decoded, err := base64.StdEncoding.DecodeString(key)
 
     if err != nil || len(decoded) != 16 {
-        return errors.New("invalid \"Sec-WebSocket-Key\"")
+        return nil, nil, nil, nil, errors.New("invalid \"Sec-WebSocket-Key\"")
     }
 
     magic  := "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -58,31 +63,257 @@ func websocket_upgrade(w http.ResponseWriter, r *http.Request) error {
     hj, ok := w.(http.Hijacker)
     if !ok {
         w.WriteHeader(500)
-        return errors.New("unsupported websocket")
+        return nil, nil, nil, nil, errors.New("unsupported websocket")
     }
 
     conn, rw, err := hj.Hijack()
     if err != nil {
         w.WriteHeader(500)
-        return errors.New("unsupported websocket")
+        return nil, nil, nil, nil, errors.New("unsupported websocket")
     }
 
     rw.WriteString(response)
     rw.Flush()
 
-    go func(conn net.Conn, rw *bufio.ReadWriter) {
-        defer conn.Close()
+    hb   := make(chan byte)
+    in   := make(chan []byte, config.BUFFER_SIZE)
+    out  := make(chan []byte, config.BUFFER_SIZE)
+    done := make(chan struct{})
 
-        buffer := make([]byte, 0x100)
+    var once sync.Once
 
-        for {
-            _, _ = rw.Read(buffer)
+    go websocket_send(rw, out, done, &once)
 
-            log.Info <- buffer
+    go websocket_receive(rw, in, hb, done, &once)
+
+    go websocket_heartbeat(out, hb, done, &once)
+
+    go func() {
+        <-done
+
+        conn.Close()
+        
+        hb   = nil
+        in   = nil
+        out  = nil
+        done = nil
+    }()
+
+    return in, out, done, &once, nil
+}
+
+func websocket_send(rw *bufio.ReadWriter, out chan []byte,
+    done chan struct{}, once *sync.Once) {
+
+    defer once.Do(func() {
+        close(done)
+    })
+
+    for { select {
+        case data := <-out:
+            rw.Write(data)
+            rw.Flush()
+        case <-done:
+            return
+    } }
+}
+
+func websocket_receive(rw *bufio.ReadWriter, in chan []byte, 
+    hb chan byte, done chan struct{}, once *sync.Once) {
+
+    defer once.Do(func() {
+        close(done)
+    })
+
+    buffer := make([]byte, config.BUFFER_SIZE)
+
+    for {
+        var data         []byte
+        var maskkey      []byte
+        var payload_type string
+        var payload_len  uint8
+        var extend_len   uint64
+        var has_mask     bool
+        var err          error
+
+        data = buffer[:2]
+
+        _, err = io.ReadFull(rw, data)
+        if err != nil {
+            return
         }
-    }(conn, rw)
 
-    return nil
+        has_mask, err = websocket_has_mask(data)
+        if err != nil {
+            return
+        }
+
+        if !has_mask {
+            return
+        }
+
+        payload_type, err = websocket_type(data)
+        if err != nil {
+            return
+        }
+
+        payload_len, err = websocket_payload_len(data)
+        if err != nil {
+            return
+        }
+
+        if payload_len <= 0x7d {
+            data = buffer[2 : 6]
+
+            _, err = io.ReadFull(rw, data)
+            if err != nil {
+                return
+            }
+
+            data = buffer[:6]
+
+            maskkey, err = websocket_get_maskkey(data)
+            if err != nil {
+                return
+            }
+
+            data = buffer[6 : 6 + payload_len]
+
+            _, err = io.ReadFull(rw, data)
+            if err != nil {
+                return
+            }
+
+            switch payload_type {
+                case "text":
+                    websocket_unmask(maskkey, data)
+                    msg := make([]byte, len(data))
+                    copy(msg, data)
+                    in <- msg
+
+                case "ping":
+                    close_, _ := websocket_make("pong", 0)
+
+                    rw.Write(close_)
+                    rw.Flush()
+
+                case "pong": hb <- 'y'
+
+                default:
+                    close_, _ := websocket_make("close", 0)
+
+                    rw.Write(close_)
+                    rw.Flush()
+
+                    return
+            }
+
+            continue
+        }
+
+        if payload_len == 0x7e {
+            data = buffer[2 : 4]
+
+            _, err = io.ReadFull(rw, data)
+            if err != nil {
+                return
+            }
+
+            data = buffer[:4]
+
+            extend_len, err = websocket_extend_len(data)
+            if err != nil {
+                return
+            }
+
+            if extend_len > config.PAYLOAD_MAX {
+                return
+            }
+
+            data = buffer[4 : 8]
+
+            _, err = io.ReadFull(rw, data)
+            if err != nil {
+                return
+            }
+
+            data = buffer[:8]
+
+            maskkey, err = websocket_get_maskkey(data)
+            if err != nil {
+                return
+            }
+
+            data = buffer[8 : 8 + extend_len]
+
+            _, err = io.ReadFull(rw, data)
+            if err != nil {
+                return
+            }
+
+            switch payload_type {
+                case "text":
+                    websocket_unmask(maskkey, data)
+
+                    msg := make([]byte, len(data))
+
+                    copy(msg, data)
+
+                    in <- msg
+
+                case "ping":
+                    pong, _ := websocket_make("pong", 0)
+
+                    rw.Write(pong)
+                    rw.Flush()
+
+                case "pong": hb <- 'y'
+
+                default:
+                    close_, _ := websocket_make("close", 0)
+
+                    rw.Write(close_)
+                    rw.Flush()
+
+                    return
+            }
+
+            continue
+        }
+
+        if payload_len == 0x7f {
+            close_, _ := websocket_make("close", 0)
+
+            rw.Write(close_)
+            rw.Flush()
+
+            return
+        }
+    }
+}
+
+func websocket_heartbeat(out chan []byte, hb chan byte,
+    done chan struct{}, once *sync.Once) {
+
+    defer once.Do(func() {
+        close(done)
+    })
+
+    for {
+        time.Sleep(time.Duration(config.HEARTBEAT) * time.Second)
+
+        ping, _ := websocket_make("ping", 0)
+        out <- ping
+
+        select {
+            case <-hb:
+                log.Info <- "pong"
+            case <-time.After(5 * time.Second):
+                return
+            case <-done:
+                return
+        }
+    }
 }
 
 func websocket_make(payload_type string, length uint64) ([]byte, error) {
@@ -209,9 +440,9 @@ func websocket_extend_len(data []byte) (uint64, error) {
            (uint64(data[9]) << 0x00), nil
 }
 
-func websocket_get_maskkey(data []byte) ([4]byte, error) {
+func websocket_get_maskkey(data []byte) ([]byte, error) {
 
-    var maskkey [4]byte
+    var maskkey []byte
 
     data_len := len(data)
 
@@ -243,24 +474,30 @@ func websocket_get_maskkey(data []byte) ([4]byte, error) {
         return maskkey, errors.New("no mask key")
     }
 
-    maskkey = [4]byte(data[offset : offset + 4])
+    maskkey = data[offset : offset + 4]
 
     return maskkey, nil
 }
 
-func websocket_unmask(maskkey [4]byte, index *uint64, 
-    payload_len uint64, payload_part []byte) {
+// func websocket_unmask(maskkey []byte, index *uint64, 
+//     payload_len uint64, payload_part []byte) {
+// 
+//     end := (*index) + uint64(len(payload_part))
+// 
+//     if end > payload_len {
+//         end = payload_len
+//     }
+// 
+//     end -= (*index)
+// 
+//     for i := uint64(0); i < end; i++ {
+//         payload_part[i] ^= maskkey[(*index) % 4]
+//         (*index)++
+//     }
+// }
 
-    end := (*index) + uint64(len(payload_part))
-
-    if end > payload_len {
-        end = payload_len
-    }
-
-    end -= (*index)
-
-    for i := uint64(0); i < end; i++ {
-        payload_part[i] ^= maskkey[(*index) % 4]
-        (*index)++
+func websocket_unmask(maskkey []byte, payload []byte) {
+    for i := 0; i < len(payload); i++ {
+        payload[i] ^= maskkey[i % 4]
     }
 }

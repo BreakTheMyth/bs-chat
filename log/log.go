@@ -4,23 +4,24 @@ import (
     "time"
     "fmt"
     "os"
+    "mygo/config"
 )
 
-var Info = make(chan any, 0x1000)
-var Err  = make(chan any, 0x1000)
+var Info = make(chan any, config.BUFFER_SIZE)
+var Err  = make(chan any, config.BUFFER_SIZE)
 
 func Start() {
     go func() { for { select {
 
         case msg := <-Info:
             fmt.Fprintf(os.Stdout, 
-                "[%v]: \033[34m%s\033[0m\n", 
-                time.Now().Format("2006-01-02 15:04:05"), msg)
+                "\n> %v\n\033[34m%s\033[0m\n", 
+                time.Now(), msg)
 
         case msg := <-Err:
             fmt.Fprintf(os.Stderr, 
-                "[%v]: \033[31m%s\033[0m\n", 
-                time.Now().Format("2006-01-02 15:04:05"), msg)
+                "\n> %v\n\033[31m%s\033[0m\n", 
+                time.Now(), msg)
 
     } } }()
 }

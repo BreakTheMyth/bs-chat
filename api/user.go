@@ -3,6 +3,7 @@ package api
 import (
     "container/heap"
     "sync"
+    "mygo/config"
 )
 
 type user struct {
@@ -17,7 +18,7 @@ var user_count = uint32(0)
 var user_list  = make(map[uint32]user)
 var idle_user  = &uint32_min_heap{}
 
-var user_mutex sync.Mutex
+var user_mutex sync.RWMutex
 
 func init() {
     heap.Init(idle_user)
@@ -40,7 +41,7 @@ func user_create(user_name string, user_ico string) uint32 {
         user_id:         user_id, 
         user_name:       user_name, 
         user_ico:        "1", 
-        message:         make(chan string, 0x100),
+        message:         make(chan string, config.BUFFER_SIZE),
         session_id_list: map[uint32]struct{}{},
     }
 
@@ -63,6 +64,7 @@ func user_destroy(user_id uint32) {
         delete(s.user_id_list, user_id)
     }
 
+    u.message         = nil
     u.session_id_list = nil
 
     delete(user_list, user_id)
@@ -71,8 +73,8 @@ func user_destroy(user_id uint32) {
 }
 
 func user_is_in_session(user_id uint32, session_id uint32) bool {
-    user_mutex.Lock()
-    defer user_mutex.Unlock()
+    user_mutex.RLock()
+    defer user_mutex.RUnlock()
 
     var is_exist bool
     var u        user
