@@ -2,15 +2,18 @@ package api
 
 import (
     "container/heap"
+    "net/http"
     "sync"
+    "fmt"
+    "mygo/server"
     "mygo/config"
 )
 
 type user struct {
     user_id         uint32
     user_name       string
-    user_ico        string
-    message         chan string
+    user_ico        uint32
+    message         chan []byte
     session_id_list map[uint32]struct{}
 }
 
@@ -22,9 +25,32 @@ var user_mutex sync.RWMutex
 
 func init() {
     heap.Init(idle_user)
+
+    server.Register("GET /users/{id}", users_handler)
 }
 
-func user_create(user_name string, user_ico string) uint32 {
+func users_handler(w http.ResponseWriter, r *http.Request) {
+    var user_id uint32
+
+    n, err := fmt.Sscanf(r.PathValue("id"), "%d", &user_id)
+    if n != 1 || err != nil {
+        w.WriteHeader(400)
+        return
+    }
+
+    u, is_exist := user_list[user_id]
+    if !is_exist {
+        w.WriteHeader(404)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    w.Write([]byte(
+        fmt.Sprintf("{\"nickname\":\"%s\",\"headshot\":\"%d\"}", 
+        u.user_name, u.user_ico)))
+}
+
+func user_create(user_name string, user_ico uint32) uint32 {
     var user_id uint32
 
     user_mutex.Lock()
@@ -40,8 +66,8 @@ func user_create(user_name string, user_ico string) uint32 {
     user_list[user_id] = user{
         user_id:         user_id, 
         user_name:       user_name, 
-        user_ico:        "1", 
-        message:         make(chan string, config.BUFFER_SIZE),
+        user_ico:        user_ico, 
+        message:         make(chan []byte, config.BUFFER_SIZE),
         session_id_list: map[uint32]struct{}{},
     }
 

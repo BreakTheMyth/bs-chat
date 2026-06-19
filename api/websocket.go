@@ -11,7 +11,6 @@ import (
     "fmt"
     "io"
     "mygo/config"
-    "mygo/log"
 )
 
 func websocket_upgrade(w http.ResponseWriter, r *http.Request) (
@@ -307,7 +306,6 @@ func websocket_heartbeat(out chan []byte, hb chan byte,
 
         select {
             case <-hb:
-                log.Info <- "pong"
             case <-time.After(5 * time.Second):
                 return
             case <-done:
