@@ -132,8 +132,7 @@ func handle_event(user_id uint32, event []byte, out chan []byte) error {
                 return errors.New("already exit")
             }
 
-            message := []byte(fmt.Sprintf("%d", user_id))
-            message = append(message, '\x1f')
+            message := []byte(fmt.Sprintf("%d\x1f%d\x1f", session_id, user_id))
             message = append(message, msg...)
 
             s := session_list[session_id]
