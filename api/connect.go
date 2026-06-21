@@ -5,8 +5,8 @@ import (
     "errors"
     "bytes"
     "fmt"
-    "mygo/server"
-    "mygo/log"
+    "github.com/BreakTheMyth/bs-chat/server"
+    "github.com/BreakTheMyth/bs-chat/log"
 )
 
 func init() {

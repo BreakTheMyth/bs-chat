@@ -5,8 +5,8 @@ import (
     "net/http"
     "sync"
     "fmt"
-    "mygo/server"
-    "mygo/config"
+    "github.com/BreakTheMyth/bs-chat/server"
+    "github.com/BreakTheMyth/bs-chat/config"
 )
 
 type session struct {

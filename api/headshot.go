@@ -3,9 +3,9 @@ package api
 import (
     "net/http"
     "io/fs"
-    "mygo/server"
-    "mygo/web"
-    "mygo/log"
+    "github.com/BreakTheMyth/bs-chat/server"
+    "github.com/BreakTheMyth/bs-chat/web"
+    "github.com/BreakTheMyth/bs-chat/log"
 )
 
 func init() {

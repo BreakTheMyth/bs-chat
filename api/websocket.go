@@ -10,7 +10,7 @@ import (
     "time"
     "fmt"
     "io"
-    "mygo/config"
+    "github.com/BreakTheMyth/bs-chat/config"
 )
 
 func websocket_upgrade(w http.ResponseWriter, r *http.Request) (

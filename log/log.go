@@ -4,7 +4,7 @@ import (
     "time"
     "fmt"
     "os"
-    "mygo/config"
+    "github.com/BreakTheMyth/bs-chat/config"
 )
 
 var Info = make(chan any, config.BUFFER_SIZE)

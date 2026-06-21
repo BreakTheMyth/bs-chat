@@ -94,7 +94,7 @@ export default function NicknameModal() {
     <div className="modal-overlay">
       <div className="modal">
         <h1 className="modal-title">BSChat</h1>
-        <p className="modal-subtitle">无需注册，即开即用</p>
+        <p className="modal-subtitle">仅供学习娱乐，风险自行承担</p>
 
         <form onSubmit={handleSubmit}>
           <label className="field-label">昵称</label>

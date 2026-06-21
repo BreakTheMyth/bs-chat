@@ -3,8 +3,8 @@ package server
 import (
     "net/http"
     "fmt"
-    "mygo/config"
-    "mygo/log"
+    "github.com/BreakTheMyth/bs-chat/config"
+    "github.com/BreakTheMyth/bs-chat/log"
 )
 
 type handler struct {

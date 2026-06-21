@@ -1,8 +1,8 @@
 package main
 
 import (
-    "mygo/server"
-    _ "mygo/api"
+    "github.com/BreakTheMyth/bs-chat/server"
+    _ "github.com/BreakTheMyth/bs-chat/api"
 )
 
 func main() {

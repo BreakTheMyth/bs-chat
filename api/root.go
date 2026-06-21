@@ -1,11 +1,11 @@
 package api
 
 import (
-	"io/fs"
-	"mygo/log"
-	"mygo/server"
-	"mygo/web"
 	"net/http"
+	"io/fs"
+	"github.com/BreakTheMyth/bs-chat/log"
+	"github.com/BreakTheMyth/bs-chat/server"
+	"github.com/BreakTheMyth/bs-chat/web"
 )
 
 func init() {
