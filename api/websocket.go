@@ -4,6 +4,7 @@ import (
     "encoding/base64"
     "crypto/sha1"
     "net/http"
+    "strings"
     "errors"
     "bufio"
     "sync"
@@ -21,10 +22,6 @@ func websocket_upgrade(w http.ResponseWriter, r *http.Request) (
         return nil, nil, nil, nil, errors.New("need \"HTTP/1.1\"")
     }
 
-    if r.Host != config.SERVER_HOST {
-        return nil, nil, nil, nil, errors.New("invalid \"Host\"")
-    }
-
     if r.Header.Get("Sec-WebSocket-Version") != "13" {
 
         w.WriteHeader(426)
@@ -32,11 +29,11 @@ func websocket_upgrade(w http.ResponseWriter, r *http.Request) (
         return nil, nil, nil, nil, errors.New("invalid \"Set-WebSocket-Version\"")
     }
 
-    if r.Header.Get("Connection") != "Upgrade" {
+    if !strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade") {
         return nil, nil, nil, nil, errors.New("invalid \"Connection\"")
     }
 
-    if r.Header.Get("Upgrade") != "websocket" {
+    if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
         return nil, nil, nil, nil, errors.New("invalid \"Upgrade\"")
     }
 
